@@ -16,6 +16,7 @@ public class DV implements RoutingAlgorithm {
     private boolean allowExpire;
 
     private HashMap<Integer, DVRoutingTableEntry> routingTable;
+    private int maxRouterId;
 
     public DV() {
         allowPReverse = false;
@@ -42,6 +43,7 @@ public class DV implements RoutingAlgorithm {
 
     public void initalise() {
         routingTable.put(router.getId(), new DVRoutingTableEntry(router.getId(), LOCAL, 0, 1));
+        maxRouterId = router.getId();
     }
 
     public int getNextHop(int destination) {
@@ -122,6 +124,9 @@ public class DV implements RoutingAlgorithm {
 
                 int weight = entry.getMetric() + iweight > INFINITY ? INFINITY : entry.getMetric() + iweight;
                 routingTable.put(destination, new DVRoutingTableEntry(destination, iface, weight, router.getCurrentTime()));
+                if(maxRouterId < destination) {
+                    maxRouterId = destination;
+                }
             }
         }
     }
@@ -129,14 +134,11 @@ public class DV implements RoutingAlgorithm {
     public void showRoutes() {
         System.out.println("Router " + router.getId());
 
-        // TODO print routing table in numerical order
         // Iterate over routing table
-        HashMap<Integer, DVRoutingTableEntry> routingTableCopy = (HashMap<Integer, DVRoutingTableEntry>) routingTable.clone();
-        Iterator it = routingTableCopy.entrySet().iterator();
-        while (it.hasNext()) {
-            Map.Entry pair = (Map.Entry) it.next();
-            System.out.println(pair.getValue().toString());
-            it.remove(); // avoids a ConcurrentModificationException
+        for(int i = 0; i <= maxRouterId; i++) {
+            if(routingTable.containsKey(i)) {
+                System.out.println(routingTable.get(i).toString());
+            }
         }
     }
 }

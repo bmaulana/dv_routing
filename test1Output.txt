@@ -116,9 +116,9 @@ Pkt stats for 4 :  s 4 r 2 d 0 f 0
 (R0:0 I0:1) s 2 r 1<-->(R1:4 I1:0) s 2 r 1
 (R0:3 I0:1) s 2 r 1<-->(R1:4 I1:1) s 2 r 1
 Router 0
-d 4 i 1 m 3
 d 0 i -1 m 0
 d 1 i 0 m 1
+d 4 i 1 m 3
 Router 1
 d 0 i 0 m 1
 d 1 i -1 m 0
@@ -128,13 +128,13 @@ d 1 i 0 m 1
 d 2 i -1 m 0
 d 3 i 1 m 1
 Router 3
-d 4 i 1 m 1
 d 2 i 0 m 1
 d 3 i -1 m 0
+d 4 i 1 m 1
 Router 4
-d 4 i -1 m 0
 d 0 i 0 m 3
 d 3 i 1 m 1
+d 4 i -1 m 0
 Time :4
 Router 0
 d 0 i -1 m 0
