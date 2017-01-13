@@ -15,15 +15,13 @@ public class DV implements RoutingAlgorithm {
     private HashMap<Integer, DVRoutingTableEntry> routingTable;
     private int maxRouterId;
     private int gc;
-    private int timeout;
 
     public DV() {
         allowPReverse = false;
         allowExpire = false;
         updateInterval = 1;
-        routingTable = new HashMap<Integer, DVRoutingTableEntry>();
+        routingTable = new HashMap<>();
         gc = 3;
-        timeout = 4;
     }
 
     public void setRouterObject(Router obj) {
@@ -33,7 +31,6 @@ public class DV implements RoutingAlgorithm {
     public void setUpdateInterval(int u) {
         updateInterval = u;
         gc = 3 * u;
-        timeout = 4 * u;
     }
 
     public void setAllowPReverse(boolean flag) {
@@ -76,7 +73,6 @@ public class DV implements RoutingAlgorithm {
                     DVRoutingTableEntry entry = routingTable.get(i);
                     if (entry.getInterface() == intrface) {
                         entry.setMetric(INFINITY);
-                        entry.setTime(router.getCurrentTime());
                     }
                 }
             }
@@ -87,11 +83,8 @@ public class DV implements RoutingAlgorithm {
             for (int i = 0; i <= maxRouterId; i++) {
                 if (routingTable.containsKey(i)) {
                     DVRoutingTableEntry entry = routingTable.get(i);
-                    if (entry.getMetric() == INFINITY && ((router.getCurrentTime() - entry.getTime()) > gc)) {
+                    if (entry.getMetric() == INFINITY && (router.getCurrentTime() - entry.getTime()) > gc) {
                         routingTable.remove(entry.getDestination());
-                    } else if ((router.getCurrentTime() - entry.getTime()) > timeout && entry.getInterface() != LOCAL) {
-                        entry.setMetric(INFINITY);
-                        entry.setTime(router.getCurrentTime());
                     }
                 }
             }
@@ -138,13 +131,14 @@ public class DV implements RoutingAlgorithm {
             if (!routingTable.containsKey(destination) || routingTable.get(destination).getInterface() == iface ||
                     entry.getMetric() + iweight < routingTable.get(destination).getMetric()) {
 
-                if (allowExpire && entry.getMetric() == INFINITY) {
+                int weight = entry.getMetric() + iweight > INFINITY ? INFINITY : entry.getMetric() + iweight;
+
+                if (allowExpire && weight == INFINITY) {
                     if (!routingTable.containsKey(destination) || routingTable.get(destination).getMetric() == INFINITY) {
                         continue;
                     }
                 }
 
-                int weight = entry.getMetric() + iweight > INFINITY ? INFINITY : entry.getMetric() + iweight;
                 routingTable.put(destination, new DVRoutingTableEntry(destination, iface, weight, router.getCurrentTime()));
                 if (maxRouterId < destination) {
                     maxRouterId = destination;
