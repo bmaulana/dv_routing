@@ -1,3 +1,4 @@
+import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.HashMap;
 
@@ -9,19 +10,17 @@ public class DV implements RoutingAlgorithm {
 
     private Router router;
     private int updateInterval;
-    private boolean allowPReverse;
-    private boolean allowExpire;
+    private boolean poisonReverse;
+    private boolean expire;
 
     private HashMap<Integer, DVRoutingTableEntry> routingTable;
     private int maxRouterId;
-    private int gc;
 
     public DV() {
-        allowPReverse = false;
-        allowExpire = false;
         updateInterval = 1;
+        poisonReverse = false;
+        expire = false;
         routingTable = new HashMap<>();
-        gc = 3;
     }
 
     public void setRouterObject(Router obj) {
@@ -30,15 +29,14 @@ public class DV implements RoutingAlgorithm {
 
     public void setUpdateInterval(int u) {
         updateInterval = u;
-        gc = 3 * u;
     }
 
     public void setAllowPReverse(boolean flag) {
-        allowPReverse = flag;
+        poisonReverse = flag;
     }
 
     public void setAllowExpire(boolean flag) {
-        allowExpire = flag;
+        expire = flag;
     }
 
     public void initalise() {
@@ -51,41 +49,45 @@ public class DV implements RoutingAlgorithm {
             return UNKNOWN; // destination not in routing table
         }
 
-        DVRoutingTableEntry entry = routingTable.get(destination);
+        DVRoutingTableEntry entry = routingTable.get(destination); // routing table entry to destination
         if (entry.getMetric() >= INFINITY || !router.getInterfaceState(entry.getInterface())) {
             return UNKNOWN; // path to destination down
         }
-        return entry.getInterface();
+        return entry.getInterface(); // interface of next hop to destination
     }
 
     public void tidyTable() {
-        // remove entries where interface is down by setting metric to INFINITY
-        Link[] links = router.getLinks();
-        for (Link link : links) {
+        // Get list of down interfaces
+        ArrayList<Integer> interfaces = new ArrayList<>();
+        for (Link link : router.getLinks()) {
             if (link.isUp()) {
                 continue;
             }
-            int intrface = link.getRouter(1) == router.getId() ? link.getInterface(1) : link.getInterface(0);
+            interfaces.add(link.getRouter(1) == router.getId() ? link.getInterface(1) : link.getInterface(0));
+        }
 
-            // Iterate over routing table
-            for (int i = 0; i <= maxRouterId; i++) {
-                if (routingTable.containsKey(i)) {
-                    DVRoutingTableEntry entry = routingTable.get(i);
-                    if (entry.getInterface() == intrface) {
-                        entry.setMetric(INFINITY);
-                    }
-                }
+        // Iterate over routing table and 'remove' entries where interface is down by setting metric to INFINITY
+        for (int i = 0; i <= maxRouterId; i++) {
+            if (!routingTable.containsKey(i)) {
+                continue;
+            }
+
+            DVRoutingTableEntry entry = routingTable.get(i);
+            if (interfaces.contains(entry.getInterface())) {
+                entry.setMetric(INFINITY);
             }
         }
 
-        if (allowExpire) {
-            // Iterate over routing table
+        // Expire entries (remove from routing table) where metric has been INFINITY for more than 3 * updateInterval
+        if (expire) {
             for (int i = 0; i <= maxRouterId; i++) {
-                if (routingTable.containsKey(i)) {
-                    DVRoutingTableEntry entry = routingTable.get(i);
-                    if (entry.getMetric() == INFINITY && (router.getCurrentTime() - entry.getTime()) > gc) {
-                        routingTable.remove(entry.getDestination());
-                    }
+                if (!routingTable.containsKey(i)) {
+                    continue;
+                }
+
+                DVRoutingTableEntry entry = routingTable.get(i);
+                if (entry.getMetric() == INFINITY && router.getCurrentTime() - entry.getTime() > 3 * updateInterval) {
+                    routingTable.remove(entry.getDestination());
                 }
             }
         }
@@ -93,22 +95,24 @@ public class DV implements RoutingAlgorithm {
 
     public Packet generateRoutingPacket(int iface) {
         if (!router.getInterfaceState(iface)) {
-            return null;
+            return null; // If interface down
         }
 
-        // init
+        // Initialise packet
         Packet packet = new RoutingPacket(router.getId(), Packet.BROADCAST);
         Payload payload = new Payload();
 
-        // Iterate over routing table
+        // Add routing table to payload
         for (int i = 0; i <= maxRouterId; i++) {
-            if (routingTable.containsKey(i)) {
-                DVRoutingTableEntry entry = routingTable.get(i).copy();
-                if (allowPReverse && entry.getInterface() == iface) {
-                    entry.setMetric(INFINITY);
-                }
-                payload.addEntry(entry);
+            if (!routingTable.containsKey(i)) {
+                continue;
             }
+
+            DVRoutingTableEntry entry = routingTable.get(i).copy();
+            if (poisonReverse && entry.getInterface() == iface) {
+                entry.setMetric(INFINITY);
+            }
+            payload.addEntry(entry);
         }
 
         packet.setPayload(payload);
@@ -117,28 +121,32 @@ public class DV implements RoutingAlgorithm {
 
     public void processRoutingPacket(Packet p, int iface) {
         if (p.getSource() == router.getId()) {
-            return;
+            return; // Ignore packets from itself
         }
 
-        Payload payload = p.getPayload();
-        int iweight = router.getInterfaceWeight(iface);
-        Enumeration entries = payload.getData().elements();
-
+        // Go through each entry in received packet
+        Enumeration entries = p.getPayload().getData().elements();
         while (entries.hasMoreElements()) {
             DVRoutingTableEntry entry = (DVRoutingTableEntry) entries.nextElement();
+
+            // If routing table do not yet has entry to destination or path proposed by received packet has less cost
+            // (metrics) than path in routing table, update routing table.
             int destination = entry.getDestination();
-
             if (!routingTable.containsKey(destination) || routingTable.get(destination).getInterface() == iface ||
-                    entry.getMetric() + iweight < routingTable.get(destination).getMetric()) {
+                    entry.getMetric() + router.getInterfaceWeight(iface) < routingTable.get(destination).getMetric()) {
 
-                int weight = entry.getMetric() + iweight > INFINITY ? INFINITY : entry.getMetric() + iweight;
+                // new metric = metric from packet + interface weight
+                int weight = entry.getMetric() + router.getInterfaceWeight(iface) > INFINITY ? INFINITY :
+                        entry.getMetric() + router.getInterfaceWeight(iface);
 
-                if (allowExpire && weight == INFINITY) {
+                // if new metric is infinity and expiration is on, ignore it to not reset timer
+                if (expire && weight == INFINITY) {
                     if (!routingTable.containsKey(destination) || routingTable.get(destination).getMetric() == INFINITY) {
                         continue;
                     }
                 }
 
+                // update routing table
                 routingTable.put(destination, new DVRoutingTableEntry(destination, iface, weight, router.getCurrentTime()));
                 if (maxRouterId < destination) {
                     maxRouterId = destination;
@@ -148,9 +156,8 @@ public class DV implements RoutingAlgorithm {
     }
 
     public void showRoutes() {
+        // Print routing table
         System.out.println("Router " + router.getId());
-
-        // Iterate over routing table
         for (int i = 0; i <= maxRouterId; i++) {
             if (routingTable.containsKey(i)) {
                 System.out.println(routingTable.get(i).toString());
@@ -209,8 +216,7 @@ class DVRoutingTableEntry implements RoutingTableEntry {
         return "d " + destination + " i " + intrface + " m " + metric;
     }
 
-    DVRoutingTableEntry copy() {
+    public DVRoutingTableEntry copy() {
         return new DVRoutingTableEntry(destination, intrface, metric, time);
     }
 }
-
