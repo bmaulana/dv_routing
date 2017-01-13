@@ -1,0 +1,13 @@
+Q1. Without SH/PR enabled, test3.cfg and test4.cfg encountered several network pathologies during link failures.
+In test3.cfg, at time=12 a packet with src=0 and dst=4 is sent, with the link (R0:3 I0:1 W0:1)<-->(R1:4 I1:0 W1:1) being down. 
+This packet routed back and forth between router 1 and 2 multiple times, until router 2 finally routed it to router 5 at time=24.
+A similar event is seen at time=50. A packet with src=0 and dst=5 is sent and routed back and forth between routers 1 and 2 endlessly.
+This behaviour is also seen in test4.cfg. At time=40 a packet with src=7 and dst=2 is sent.
+Again, the packet is routed back and forth between routers 5 and 6 endlessly.
+
+Q2. With SH/PR enabled, the network pathology explained in Q1 is prevented.
+In test3.cfg, for the packet sent at time=12, the metrics of router 0's routing table for destination 4 is set to be INFINITE. 
+Thus the packet is immediately dropped, preventing the infinite back-and-forth loop between router 1 and 2.
+Similarly, for the packet sent at time=50, it is dropped at time=51 by router 1, as the metrics of router 1's routing table for destination 5 is set to be INFINITE.
+In test4.cfg, the packet sent at time=40 with src=7 and dst=2 is dropped at time=47 after it was routed back to routers 6 and 4 for the second time.
+Also, it appears that with SH/PR enabled, a packet cannot travel through the same link more than once. If there are no outgoing links that the packet has not travelled through from a router, the packet is dropped.
